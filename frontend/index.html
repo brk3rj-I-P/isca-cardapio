@@ -53,20 +53,90 @@
     <p class="text-sm md:text-lg" style="color: #666">A IA analisa seu cardápio e mostra exatamente onde estão as perdas.</p>
   </section>
 
-  <!-- VIDEO -->
+  <!-- DEMO MOCK -->
   <section class="px-4 md:px-10 pb-10 md:pb-14 max-w-4xl mx-auto">
-    <div class="video-wrapper" style="box-shadow: 0 0 60px rgba(184,232,196,0.12)">
-      <iframe id="vid-main" src="https://www.youtube.com/embed/NOc8oHmTEPI?autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1&enablejsapi=1"
-        title="A importância de um cardápio bem feito"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen></iframe>
-      <div id="vid-main-overlay" onclick="ativarSom('vid-main','NOc8oHmTEPI')" style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);cursor:pointer;z-index:10">
-        <div style="background:rgba(0,0,0,0.75);border:1px solid rgba(184,232,196,0.4);color:var(--mint);font-size:13px;font-weight:700;padding:8px 20px;border-radius:999px;white-space:nowrap;backdrop-filter:blur(6px)">
-          Ativar som
+    <div id="demo-mock" style="border-radius:16px;overflow:hidden;border:1px solid rgba(184,232,196,0.15);background:#111;box-shadow:0 0 60px rgba(184,232,196,0.12);padding:28px 24px 24px">
+      <!-- cabeçalho mock -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div>
+          <div style="color:#fff;font-weight:800;font-size:15px">Burger House RJ</div>
+          <div style="color:#555;font-size:12px;margin-top:2px">cardapioweb.com.br/burgerhouseri</div>
+        </div>
+        <div id="score-badge" style="background:linear-gradient(135deg,#b8e8c4,#7ec98a);color:#000;font-weight:900;font-size:22px;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.5s">72</div>
+      </div>
+      <!-- barras de score -->
+      <div style="display:grid;gap:10px;margin-bottom:20px" id="score-bars">
+        <div data-score="40" data-label="Fotos dos produtos" data-val="4.0" style="opacity:0">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:#aaa;font-size:12px">Fotos dos produtos</span><span class="bar-num" style="color:var(--mint);font-size:12px;font-weight:700">0</span></div>
+          <div style="height:6px;background:#222;border-radius:99px;overflow:hidden"><div class="bar-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#b8e8c4,#7ec98a);border-radius:99px;transition:width 1s ease"></div></div>
+        </div>
+        <div data-score="80" data-label="Descrições" data-val="8.0" style="opacity:0">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:#aaa;font-size:12px">Descrições</span><span class="bar-num" style="color:var(--mint);font-size:12px;font-weight:700">0</span></div>
+          <div style="height:6px;background:#222;border-radius:99px;overflow:hidden"><div class="bar-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#b8e8c4,#7ec98a);border-radius:99px;transition:width 1s ease"></div></div>
+        </div>
+        <div data-score="60" data-label="Precificação" data-val="6.0" style="opacity:0">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:#aaa;font-size:12px">Precificação</span><span class="bar-num" style="color:var(--mint);font-size:12px;font-weight:700">0</span></div>
+          <div style="height:6px;background:#222;border-radius:99px;overflow:hidden"><div class="bar-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#b8e8c4,#7ec98a);border-radius:99px;transition:width 1s ease"></div></div>
+        </div>
+        <div data-score="90" data-label="Nomes dos itens" data-val="9.0" style="opacity:0">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:#aaa;font-size:12px">Nomes dos itens</span><span class="bar-num" style="color:var(--mint);font-size:12px;font-weight:700">0</span></div>
+          <div style="height:6px;background:#222;border-radius:99px;overflow:hidden"><div class="bar-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#b8e8c4,#7ec98a);border-radius:99px;transition:width 1s ease"></div></div>
+        </div>
+        <div data-score="70" data-label="Organização" data-val="7.0" style="opacity:0">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:#aaa;font-size:12px">Organização</span><span class="bar-num" style="color:var(--mint);font-size:12px;font-weight:700">0</span></div>
+          <div style="height:6px;background:#222;border-radius:99px;overflow:hidden"><div class="bar-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#b8e8c4,#7ec98a);border-radius:99px;transition:width 1s ease"></div></div>
         </div>
       </div>
+      <!-- insight mock -->
+      <div id="insight-mock" style="background:#1a1a1a;border-radius:10px;padding:14px 16px;border-left:3px solid var(--mint);opacity:0;transition:opacity 0.5s">
+        <div style="color:var(--mint);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Principal oportunidade</div>
+        <div style="color:#ccc;font-size:13px;line-height:1.6">Apenas <strong style="color:#fff">38% dos itens têm foto</strong>. Cardápios com foto em todos os produtos convertem até 3x mais. Adicionar imagens nos pratos principais pode gerar impacto imediato no ticket médio.</div>
+      </div>
+      <div style="margin-top:12px;color:#444;font-size:11px;text-align:center">Análise gerada por IA em 47 segundos</div>
     </div>
   </section>
+  <script>
+    (function() {
+      function animarDemo() {
+        var bars = document.querySelectorAll('#score-bars > div');
+        var delay = 0;
+        bars.forEach(function(bar, i) {
+          setTimeout(function() {
+            bar.style.opacity = '1';
+            bar.style.transition = 'opacity 0.4s';
+            setTimeout(function() {
+              var fill = bar.querySelector('.bar-fill');
+              var num = bar.querySelector('.bar-num');
+              var score = parseInt(bar.dataset.score);
+              var val = bar.dataset.val;
+              fill.style.width = score + '%';
+              var start = 0, end = parseFloat(val), dur = 900, step = 16;
+              var inc = (end - start) / (dur / step);
+              var iv = setInterval(function() {
+                start = Math.min(start + inc, end);
+                num.textContent = start.toFixed(1);
+                if (start >= end) clearInterval(iv);
+              }, step);
+            }, 100);
+          }, delay);
+          delay += 180;
+        });
+        setTimeout(function() {
+          document.getElementById('score-badge').style.opacity = '1';
+          document.getElementById('insight-mock').style.opacity = '1';
+        }, delay + 200);
+      }
+      var observed = false;
+      var obs = new IntersectionObserver(function(entries) {
+        if (entries[0].isIntersecting && !observed) {
+          observed = true;
+          animarDemo();
+        }
+      }, { threshold: 0.3 });
+      var el = document.getElementById('demo-mock');
+      if (el) obs.observe(el);
+    })();
+  </script>
 
   <!-- CTA 1 -->
   <div class="px-5 pb-12 text-center">
