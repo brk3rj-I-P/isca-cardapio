@@ -38,6 +38,7 @@ app.use((req, res, next) => {
     "script-src 'self' 'unsafe-inline' https:",
     "font-src 'self' data: https:",
     "connect-src 'self'",
+    "frame-src https://www.youtube.com https://youtube.com",
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'self'",
