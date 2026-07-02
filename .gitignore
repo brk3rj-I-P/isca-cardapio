@@ -1,0 +1,23 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente (nunca subir chaves)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cache Puppeteer
+.cache/
+
+# MacOS
+.DS_Store
+
+# Screenshots temporários
+backend/public/screenshots/
+
+# Build
+dist/
