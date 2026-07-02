@@ -56,7 +56,7 @@
   <!-- VIDEO -->
   <section class="px-4 md:px-10 pb-10 md:pb-14 max-w-4xl mx-auto">
     <div class="video-wrapper" style="box-shadow: 0 0 60px rgba(184,232,196,0.12)">
-      <iframe id="vid-main" src="https://www.youtube.com/embed/NOc8oHmTEPI?autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1"
+      <iframe id="vid-main" src="https://www.youtube.com/embed/NOc8oHmTEPI?autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1&enablejsapi=1"
         title="A importância de um cardápio bem feito"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowfullscreen></iframe>
@@ -188,7 +188,7 @@
     <p class="text-sm mb-8" style="color:#555">O cardápio certo muda tudo. Veja o relato.</p>
     <div class="mx-auto overflow-hidden" style="width:240px;aspect-ratio:9/16;position:relative;border-radius:24px">
       <iframe id="vid-dep"
-        src="https://www.youtube.com/embed/HPUH3m9XKCY?autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1"
+        src="https://www.youtube.com/embed/HPUH3m9XKCY?autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1&enablejsapi=1"
         title="De R$8k para R$116k por mês"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowfullscreen
@@ -414,6 +414,25 @@
     iframe.src = 'https://www.youtube.com/embed/' + videoId + '?autoplay=1&mute=0&controls=1&playsinline=1&modestbranding=1';
     if (overlay) overlay.style.display = 'none';
   }
+
+  // Detecta erro 150/153 do YouTube (embedding desabilitado) e esconde o player
+  window.addEventListener('message', function(e) {
+    if (!e.origin.includes('youtube.com')) return;
+    try {
+      const data = JSON.parse(e.data);
+      if (data.event === 'onError' && (data.info === 150 || data.info === 153 || data.info === 101)) {
+        // Encontra o iframe que enviou a mensagem e esconde a section pai
+        document.querySelectorAll('iframe[src*="youtube"]').forEach(function(iframe) {
+          try {
+            if (iframe.contentWindow === e.source) {
+              const section = iframe.closest('section');
+              if (section) section.style.display = 'none';
+            }
+          } catch(_) {}
+        });
+      }
+    } catch(_) {}
+  });
 
   function toggleFaq(btn) {
     const body = btn.nextElementSibling;
