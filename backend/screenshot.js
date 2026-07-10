@@ -165,15 +165,12 @@ async function capturarCardapio(url, opts = {}) {
     () => /R\$\s*\d/.test((document.body && document.body.innerText) || ''),
     { timeout: 30000 }
   ).catch(() => {});
-  await new Promise(r => setTimeout(r, 3500));
+  await new Promise(r => setTimeout(r, 2000));
 
-  // Sem manipulação de modal aqui — modal será removido logo antes do screenshot
-
-  // Fecha modais genéricos — tenta duas vezes pois alguns aparecem com delay
-  await fecharModais(page);
-  await new Promise(r => setTimeout(r, 1200));
   await fecharModais(page);
   await new Promise(r => setTimeout(r, 800));
+  await fecharModais(page);
+  await new Promise(r => setTimeout(r, 500));
 
   // Detecta se o scroll está num container interno (ex: cardapioweb usa #root)
   const scrollContainer = await page.evaluate(() => {
@@ -199,11 +196,10 @@ async function capturarCardapio(url, opts = {}) {
     });
   }, scrollContainer);
 
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise(r => setTimeout(r, 1500));
 
-  // Fecha modais que aparecem durante o scroll
   await fecharModais(page);
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise(r => setTimeout(r, 500));
 
   // Aguarda todas as imagens terminarem de carregar
   await page.evaluate(async () => {
@@ -219,9 +215,6 @@ async function capturarCardapio(url, opts = {}) {
     const textoCompleto = document.body.innerText;
     const produtosMap = new Map();
 
-    // Detecta categorias (headings de seção do cardápio).
-    // Conservador: só h2/h3 e classes explícitas de categoria; ignora quem tem preço,
-    // quebra de linha (é card de produto) ou texto muito longo.
     const categoriasSet = new Set();
     document.querySelectorAll('h2,h3,[class*="category" i],[class*="categoria" i],[class*="section-title" i],[class*="sectionTitle" i]').forEach(h => {
       const t = (h.innerText || '').trim();
@@ -231,68 +224,62 @@ async function capturarCardapio(url, opts = {}) {
       }
     });
 
-    document.querySelectorAll('*').forEach(el => {
-      const texto = el.innerText || '';
-      if (texto.match(/R\$\s*\d+[,\.]\d{2}/) && texto.length < 500) {
-        const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
-        if (linhas.length < 2) return;
-        const chave = texto.trim().slice(0, 300);
-        if (produtosMap.has(chave)) return;
+    // Limita iteração a 3000 elementos para não travar em páginas pesadas
+    const allEls = [...document.querySelectorAll('*')];
+    const els = allEls.length > 3000 ? allEls.slice(0, 3000) : allEls;
 
-        // --- Detecção de foto ---
-        // <img> tags
-        const imgs = el.querySelectorAll('img');
-        const temFotoImg = [...imgs].some(img => {
-          const src = img.src || img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || '';
-          if (!src || src.startsWith('data:image/svg') || src.startsWith('data:image/gif')) return false;
-          const w = img.naturalWidth || img.width || parseInt(img.getAttribute('width') || '0');
-          const h = img.naturalHeight || img.height || parseInt(img.getAttribute('height') || '0');
-          const grande = (w === 0 || w > 50) && (h === 0 || h > 50);
-          const naoEhLogo = !src.toLowerCase().includes('logo') &&
-                            !src.toLowerCase().includes('banner') &&
-                            !src.toLowerCase().includes('icon') &&
-                            !src.toLowerCase().includes('avatar') &&
-                            !src.toLowerCase().includes('placeholder');
-          return grande && naoEhLogo;
-        });
-        // background-image via CSS (iFood e outros usam isso para a foto do produto)
-        const temFotoBg = !temFotoImg && [...el.querySelectorAll('*')].some(child => {
+    for (const el of els) {
+      if (produtosMap.size >= 200) break; // para quando tiver produtos suficientes
+      const texto = el.innerText || '';
+      if (!texto.match(/R\$\s*\d+[,\.]\d{2}/) || texto.length >= 500) continue;
+      const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
+      if (linhas.length < 2) continue;
+      const chave = texto.trim().slice(0, 300);
+      if (produtosMap.has(chave)) continue;
+
+      // Detecção de foto via <img>
+      const imgs = el.querySelectorAll('img');
+      const temFotoImg = [...imgs].some(img => {
+        const src = img.src || img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || '';
+        if (!src || src.startsWith('data:image/svg') || src.startsWith('data:image/gif')) return false;
+        const w = img.naturalWidth || img.width || parseInt(img.getAttribute('width') || '0');
+        const h = img.naturalHeight || img.height || parseInt(img.getAttribute('height') || '0');
+        const grande = (w === 0 || w > 50) && (h === 0 || h > 50);
+        return grande && !src.toLowerCase().match(/logo|banner|icon|avatar|placeholder/);
+      });
+
+      // Detecção de foto via background-image (limitado a 30 filhos por elemento)
+      let temFotoBg = false;
+      if (!temFotoImg) {
+        const children = [...el.querySelectorAll('*')].slice(0, 30);
+        temFotoBg = children.some(child => {
           try {
             const bg = window.getComputedStyle(child).backgroundImage;
             if (!bg || bg === 'none' || bg.includes('gradient')) return false;
             const urlMatch = bg.match(/url\(["']?([^"')]+)/);
             if (!urlMatch) return false;
-            const url = urlMatch[1];
             const rect = child.getBoundingClientRect();
-            const grande = rect.width > 50 && rect.height > 50;
-            const naoEhLogo = !url.toLowerCase().includes('logo') &&
-                              !url.toLowerCase().includes('banner') &&
-                              !url.toLowerCase().includes('icon') &&
-                              !url.toLowerCase().includes('placeholder');
-            return grande && naoEhLogo;
+            return rect.width > 50 && rect.height > 50 && !urlMatch[1].toLowerCase().match(/logo|banner|icon|placeholder/);
           } catch(_) { return false; }
         });
-        const temFoto = temFotoImg || temFotoBg;
-
-        // --- Parse nome / preço / descrição a partir das linhas ---
-        const ehPreco = (l) => /R\$\s*\d+[,\.]\d{2}/.test(l);
-        const ehRuido = (l) => /^\d+([,\.]\d+)?%?$/.test(l) ||        // número/rating solto
-                               /^[\d,\.]+\s*(km|min|R\$)?$/i.test(l) || // distância/tempo
-                               /^(adicionar|ver mais|esgotado|indispon)/i.test(l);
-        const precoLinha = linhas.find(ehPreco) || '';
-        const precoMatch = precoLinha.match(/R\$\s*(\d{1,4}(?:\.\d{3})*[,\.]\d{2})/);
-        const preco = precoMatch ? 'R$ ' + precoMatch[1] : '';
-        const precoNum = precoMatch ? parseFloat(precoMatch[1].replace(/\./g, '').replace(',', '.')) : 0;
-        // Nome: primeira linha que não é preço nem ruído
-        const nome = (linhas.find(l => !ehPreco(l) && !ehRuido(l) && l.length >= 2) || linhas[0]).slice(0, 90);
-        // Descrição: linha mais longa (>=20 chars) que não seja nome nem preço
-        const descricao = (linhas
-          .filter(l => l !== nome && !ehPreco(l) && !ehRuido(l) && l.length >= 20)
-          .sort((a, b) => b.length - a.length)[0] || '').slice(0, 220);
-
-        produtosMap.set(chave, { nome, preco, precoNum, descricao, temFoto });
       }
-    });
+      const temFoto = temFotoImg || temFotoBg;
+
+      const ehPreco = (l) => /R\$\s*\d+[,\.]\d{2}/.test(l);
+      const ehRuido = (l) => /^\d+([,\.]\d+)?%?$/.test(l) ||
+                             /^[\d,\.]+\s*(km|min|R\$)?$/i.test(l) ||
+                             /^(adicionar|ver mais|esgotado|indispon)/i.test(l);
+      const precoLinha = linhas.find(ehPreco) || '';
+      const precoMatch = precoLinha.match(/R\$\s*(\d{1,4}(?:\.\d{3})*[,\.]\d{2})/);
+      const preco = precoMatch ? 'R$ ' + precoMatch[1] : '';
+      const precoNum = precoMatch ? parseFloat(precoMatch[1].replace(/\./g, '').replace(',', '.')) : 0;
+      const nome = (linhas.find(l => !ehPreco(l) && !ehRuido(l) && l.length >= 2) || linhas[0]).slice(0, 90);
+      const descricao = (linhas
+        .filter(l => l !== nome && !ehPreco(l) && !ehRuido(l) && l.length >= 20)
+        .sort((a, b) => b.length - a.length)[0] || '').slice(0, 220);
+
+      produtosMap.set(chave, { nome, preco, precoNum, descricao, temFoto });
+    }
 
     const produtos = [...produtosMap.values()].slice(0, 500);
     const totalComFoto = produtos.filter(p => p.temFoto).length;
