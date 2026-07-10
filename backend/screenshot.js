@@ -98,6 +98,7 @@ async function capturarCardapio(url, opts = {}) {
   const { pinHost, pinIp } = opts;
   const launchOptions = {
     headless: true,
+    protocolTimeout: 60000,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -123,6 +124,7 @@ async function capturarCardapio(url, opts = {}) {
   const browser = await puppeteerExtra.launch(launchOptions);
 
   const page = await browser.newPage();
+  page.setDefaultTimeout(30000);
 
   // Interceptação: bloqueia qualquer request (inclusive subrecursos/redirects) para host interno
   try {
@@ -177,17 +179,19 @@ async function capturarCardapio(url, opts = {}) {
     return (root && root.scrollHeight > docHeight) ? 'root' : 'document';
   });
 
-  // Scrolla devagar pra disparar lazy loading de imagens
+  // Scrolla devagar pra disparar lazy loading de imagens (cap em 15000px e 15s max)
   await page.evaluate(async (container) => {
     const el = container === 'root' ? document.getElementById('root') : null;
     await new Promise(resolve => {
       let total = 0;
       const step = 250;
-      const max = el ? el.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      const rawMax = el ? el.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      const max = Math.min(rawMax, 15000);
+      const deadline = Date.now() + 15000;
       const timer = setInterval(() => {
         if (el) el.scrollTop += step; else window.scrollBy(0, step);
         total += step;
-        if (total >= max) { clearInterval(timer); resolve(); }
+        if (total >= max || Date.now() >= deadline) { clearInterval(timer); resolve(); }
       }, 150);
     });
   }, scrollContainer);

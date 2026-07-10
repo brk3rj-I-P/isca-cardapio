@@ -136,6 +136,10 @@ app.post('/api/analisar', async (req, res) => {
   }
 
   emAndamento++;
+  const TIMEOUT_MS = 150000; // 150s: screenshot (~80s) + IA (~60s), sobra margem antes do AbortController do cliente (240s)
+  let timedOut = false;
+  const timeoutHandle = setTimeout(() => { timedOut = true; }, TIMEOUT_MS);
+
   try {
     console.log(`\n🔍 Analisando: ${url}`);
     console.log(`👤 Lead: ${String(nome || '').slice(0, 80)} | ${String(whatsapp || '').slice(0, 40)}`);
@@ -143,15 +147,23 @@ app.post('/api/analisar', async (req, res) => {
     // Screenshot com retry (pina o IP público resolvido pra impedir DNS rebinding)
     let resultado;
     for (let tentativa = 1; tentativa <= 2; tentativa++) {
+      if (timedOut) {
+        return res.status(504).json({ error: 'A análise demorou demais. O servidor está iniciando — aguarde 30 segundos e tente novamente.' });
+      }
       try {
         console.log(`📸 Screenshot (tentativa ${tentativa})...`);
-        resultado = await capturarCardapio(url, { pinHost: seg.host, pinIp: seg.ip });
+        resultado = await Promise.race([
+          capturarCardapio(url, { pinHost: seg.host, pinIp: seg.ip }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('screenshot_timeout')), 100000)),
+        ]);
         console.log('✅ Screenshots capturados');
         break;
       } catch (e) {
         console.error(`❌ Screenshot tentativa ${tentativa}: ${e.message}`);
         if (tentativa === 2) {
-          const msg = e.message.includes('ERR_NAME_NOT_RESOLVED')
+          const msg = e.message === 'screenshot_timeout'
+            ? 'O cardápio demorou demais para carregar. Tente novamente.'
+            : e.message.includes('ERR_NAME_NOT_RESOLVED')
             ? 'Não conseguimos acessar esse link. Verifique se o endereço está correto.'
             : (e.message.includes('timeout') || e.message.includes('Timeout'))
             ? 'O cardápio demorou demais para carregar. Tente novamente.'
@@ -170,6 +182,10 @@ app.post('/api/analisar', async (req, res) => {
       return res.status(422).json({ error: 'Não encontramos produtos com preço nesse link. Confira se é a página do cardápio (com os itens e valores) e tente de novo.' });
     }
 
+    if (timedOut) {
+      return res.status(504).json({ error: 'A análise demorou demais. Tente novamente.' });
+    }
+
     // Análise pela IA
     let analise;
     try {
@@ -178,7 +194,6 @@ app.post('/api/analisar', async (req, res) => {
       console.log(`✅ Análise concluída: ${analise.estabelecimento}`);
     } catch (e) {
       console.error('❌ Análise falhou:', e.message);
-      // Não vaza a mensagem interna pro cliente
       return res.status(502).json({ error: 'Não foi possível concluir a análise agora. Tente novamente em instantes.' });
     }
 
@@ -189,6 +204,7 @@ app.post('/api/analisar', async (req, res) => {
       secoes: resultado.secoes,
     });
   } finally {
+    clearTimeout(timeoutHandle);
     emAndamento--;
   }
 });

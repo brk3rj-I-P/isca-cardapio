@@ -11,7 +11,7 @@ const defaultHeaders = LLM_BASE_URL.includes('openrouter')
   ? { 'HTTP-Referer': 'https://isca-cardapio-backend.onrender.com', 'X-Title': 'Isca Cardapio' }
   : undefined;
 
-const client = new OpenAI({ apiKey: LLM_API_KEY, baseURL: LLM_BASE_URL, defaultHeaders });
+const client = new OpenAI({ apiKey: LLM_API_KEY, baseURL: LLM_BASE_URL, defaultHeaders, timeout: 90000 });
 
 // ============================================================
 // SCORING HÍBRIDO
