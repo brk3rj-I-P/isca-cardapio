@@ -37,6 +37,31 @@ function htmlToText(html) {
     .replace(/\s+/g, ' ').trim();
 }
 
+function parseRappiCorridors(storeData) {
+  const nomeLoja = storeData.name || storeData.brand_name || 'Restaurante';
+  const corridors = storeData.corridors || [];
+  let textoCompleto = `${nomeLoja}\n\n`;
+  const produtos = [];
+  const seen = new Set();
+  for (const corridor of corridors) {
+    const catName = corridor.name || '';
+    if (catName) textoCompleto += `\n## ${catName}\n`;
+    for (const item of (corridor.products || [])) {
+      const nome = (item.name || '').trim();
+      const desc = (item.description || '').trim();
+      const precoNum = Number(item.real_price || item.price || 0);
+      const preco = precoNum > 0 ? `R$ ${precoNum.toFixed(2).replace('.', ',')}` : '';
+      if (!nome || !preco) continue;
+      const key = `${nome}|${preco}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      textoCompleto += `${nome}\n${desc ? desc + '\n' : ''}${preco}\n\n`;
+      produtos.push({ nome: nome.slice(0, 90), preco, precoNum, descricao: desc.slice(0, 220), temFoto: !!(item.image) });
+    }
+  }
+  return { nomeLoja, textoCompleto, produtos };
+}
+
 function buildResult(nome, textoCompleto, produtos) {
   const totalComFoto = produtos.filter(p => p.temFoto).length;
   return {
@@ -202,38 +227,90 @@ async function captureIfood(url) {
 
 // ─── Rappi ───────────────────────────────────────────────────────────────────
 
+// Chave estática do frontend Rappi (bundle JS) usada para obter token guest anônimo
+const RAPPI_GUEST_KEY = 'fDvxV+6QI/FeoLIIAt3Fnl/JsL3Dwhsg3GDjeMLw9qyOM1jUly5rHeg3qB5ejHbnc4jqNwNNdCnQW/xfnSX7RPI3TVnSSGlmYgKW3vqD2+nMDoZ+CgqF4TtDY0druCNhzt0c0RWoeg/LiEH6z7VX03pMt2gPybExsWPOniMS/ha+h++IBgcHuvxTQM4iudpqPIuEWJb8czUJ2lMgPJp4ch1tq0NHSkFVeAfQvuyw+wtL52Y9d90cGrjs8hSezNE1Q80qdadxPXEcF81fi9JrcWdh5EEkAG4zhq5UdOrmj/KfCyHOipryZRS/E7uHqhScSOG7xKJKpDTGOnhL0kN37A==';
+
+async function getRappiGuestToken() {
+  const resp = await Promise.race([
+    fetch('https://services.rappi.com.br/api/rocket/v2/guest', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-guest-api-key': RAPPI_GUEST_KEY,
+        'origin': 'https://www.rappi.com.br',
+        'referer': 'https://www.rappi.com.br/',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+        'accept-language': 'pt-BR',
+      },
+    }).then(r => r.ok ? r.json() : Promise.reject(new Error(`guest HTTP ${r.status}`))),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000)),
+  ]);
+  if (!resp.access_token) throw new Error('no access_token');
+  return resp.access_token;
+}
+
 async function captureRappi(url) {
-  const storeMatch = url.match(/store\/([^/?#]+)/);
-  if (!storeMatch) return null;
-  const storeId = storeMatch[1];
+  // URL Brasil: /restaurantes/{numericId}-{slug}
+  const m = url.match(/restaurantes\/(\d+)(?:-[^/?#]*)?/);
+  if (!m) return null;
+  const storeId = m[1];
 
   try {
-    console.log(`📡 Rappi API store: ${storeId}`);
-    const data = await httpGetJson(
-      `https://ms.rappi.com.br/api/v2/presentation/stores/${storeId}/sections`,
-      { 'Accept': 'application/json', 'rp-platform-type': 'WEB', 'language': 'pt' },
-      12000
-    );
-    const sections = Array.isArray(data) ? data : (data.sections || data.data || []);
-    let textoCompleto = `Rappi\n\n`;
+    console.log(`📡 Rappi: obtendo token guest...`);
+    const bearerToken = await getRappiGuestToken();
+
+    console.log(`📡 Rappi: carregando cardápio da loja ${storeId}...`);
+    const storeData = await Promise.race([
+      fetch(`https://services.rappi.com.br/api/web-gateway/web/restaurants-bus/store/id/${storeId}/`, {
+        method: 'POST',
+        headers: {
+          'authorization': `Bearer ${bearerToken}`,
+          'content-type': 'application/json; charset=UTF-8',
+          'accept': 'application/json',
+          'origin': 'https://www.rappi.com.br',
+          'referer': 'https://www.rappi.com.br/',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+          'accept-language': 'pt-BR',
+          'deviceid': '857bb725-8cd8-4f39-98b7-149163b6e441',
+          'app-version-name': '1.162.2',
+          'app-version': '1.162.2',
+        },
+        body: JSON.stringify({ lat: -22.9068, lng: -43.1729, store_type: 'restaurant', is_prime: false, prime_config: { unlimited_shipping: false } }),
+      }).then(r => r.ok ? r.json() : Promise.reject(new Error(`store HTTP ${r.status}`))),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
+    ]);
+
+    const nomeLoja = storeData.name || storeData.brand_name || 'Restaurante';
+    const corridors = storeData.corridors || [];
+    let textoCompleto = `${nomeLoja}\n\n`;
     const produtos = [];
-    for (const sec of sections) {
-      const catName = sec.name || sec.title || '';
-      const items = sec.products || sec.items || [];
+    const seen = new Set();
+
+    for (const corridor of corridors) {
+      const catName = corridor.name || '';
       if (catName) textoCompleto += `\n## ${catName}\n`;
-      for (const item of items) {
+      for (const item of (corridor.products || [])) {
         const nome = (item.name || '').trim();
         const desc = (item.description || '').trim();
-        const precoNum = Number(item.price || item.realPrice || 0);
+        const precoNum = Number(item.real_price || item.price || 0);
         const preco = precoNum > 0 ? `R$ ${precoNum.toFixed(2).replace('.', ',')}` : '';
-        const temFoto = !!(item.image_url || item.image);
         if (!nome || !preco) continue;
+        // Produto aparece em múltiplos corredores; deduplica
+        const key = `${nome}|${preco}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         textoCompleto += `${nome}\n${desc ? desc + '\n' : ''}${preco}\n\n`;
-        produtos.push({ nome: nome.slice(0, 90), preco, precoNum, descricao: desc.slice(0, 220), temFoto });
+        produtos.push({ nome: nome.slice(0, 90), preco, precoNum, descricao: desc.slice(0, 220), temFoto: !!(item.image) });
       }
     }
-    if (produtos.length > 0) { console.log(`✅ Rappi: ${produtos.length} produtos`); return buildResult('rappi', textoCompleto, produtos); }
-  } catch (e) { console.warn(`Rappi: ${e.message}`); }
+
+    if (produtos.length > 0) {
+      console.log(`✅ Rappi: ${produtos.length} produtos de "${nomeLoja}"`);
+      return buildResult('rappi', textoCompleto, produtos);
+    }
+  } catch (e) {
+    console.warn(`Rappi: ${e.message}`);
+  }
   return null;
 }
 
@@ -290,4 +367,4 @@ async function captureWithPlatformHandler(url) {
   return null;
 }
 
-module.exports = { captureWithPlatformHandler };
+module.exports = { captureWithPlatformHandler, buildResult, parseRappiCorridors };

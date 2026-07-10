@@ -1,7 +1,7 @@
 const puppeteerExtra = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteerExtra.use(StealthPlugin());
-const { captureWithPlatformHandler } = require('./platforms');
+const { captureWithPlatformHandler, buildResult, parseRappiCorridors } = require('./platforms');
 
 async function fecharModais(page) {
   // 1. Tenta pressionar Escape
@@ -98,10 +98,93 @@ function ehHostInternoLiteral(host) {
   return false;
 }
 
+// Rappi bloqueia scraping DOM mas não bloqueia o browser real.
+// Estratégia: rodar Puppeteer, interceptar a resposta da API interna, retornar JSON limpo.
+async function captureRappiWithIntercept(url, opts = {}) {
+  const storeMatch = url.match(/restaurantes\/(\d+)/);
+  if (!storeMatch) return null;
+  const storeId = storeMatch[1];
+
+  const { pinHost, pinIp } = opts;
+  const launchOptions = {
+    headless: true,
+    protocolTimeout: 60000,
+    args: [
+      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote',
+      '--disable-gpu', '--single-process',
+    ],
+  };
+  if (pinHost && pinIp) launchOptions.args.push(`--host-resolver-rules=MAP ${pinHost} ${pinIp}`);
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+
+  const browser = await puppeteerExtra.launch(launchOptions);
+  const page = await browser.newPage();
+  page.setDefaultTimeout(30000);
+
+  // SSRF protection
+  await page.setRequestInterception(true);
+  page.on('request', req => {
+    try {
+      const proto = new URL(req.url()).protocol;
+      const host = new URL(req.url()).hostname;
+      if (!['http:', 'https:', 'data:', 'blob:'].includes(proto) || ehHostInternoLiteral(host)) return req.abort();
+      return req.continue();
+    } catch (_) { return req.continue(); }
+  });
+
+  // Intercepta a resposta da API de cardápio do Rappi
+  let capturedData = null;
+  page.on('response', async resp => {
+    if (capturedData) return;
+    try {
+      if (resp.url().includes(`/store/id/${storeId}/`)) {
+        const json = await resp.json();
+        if (json && json.corridors && json.corridors.length > 0) capturedData = json;
+      }
+    } catch (_) {}
+  });
+
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+  await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9' });
+
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (_) {}
+
+  // Aguarda até 20s pela captura da resposta da API
+  const deadline = Date.now() + 20000;
+  while (!capturedData && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  await browser.close();
+
+  if (!capturedData) {
+    console.warn(`Rappi intercept: sem dados da API para loja ${storeId}`);
+    return null;
+  }
+
+  const { nomeLoja, textoCompleto, produtos } = parseRappiCorridors(capturedData);
+  if (produtos.length === 0) return null;
+
+  console.log(`✅ Rappi intercept: ${produtos.length} produtos de "${nomeLoja}"`);
+  return buildResult('rappi', textoCompleto, produtos);
+}
+
 async function capturarCardapio(url, opts = {}) {
   // Tenta handler específico por plataforma antes de abrir Puppeteer
   const platformResult = await captureWithPlatformHandler(url);
   if (platformResult) return platformResult;
+
+  // Rappi: usa Puppeteer com interceptação de resposta da API (a chave guest é gerada dinamicamente no browser)
+  if (/rappi\.com/i.test(url)) {
+    console.log('🎯 Rappi: usando interceptação de browser');
+    const rappiResult = await captureRappiWithIntercept(url, opts);
+    if (rappiResult) return rappiResult;
+    console.warn('⚠️ Rappi intercept falhou, tentando scraping DOM');
+  }
 
 
   const { pinHost, pinIp } = opts;
