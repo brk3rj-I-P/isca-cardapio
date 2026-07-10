@@ -63,36 +63,31 @@ function extractIfoodUuid(url) {
   return m ? m[1] : null;
 }
 
-function parseIfoodCents(raw) {
-  if (!raw && raw !== 0) return 0;
-  const n = Number(raw);
-  if (isNaN(n)) return 0;
-  // iFood guarda em centavos quando o valor é > 500 (R$5,00 = 500)
-  return n > 500 ? n / 100 : n;
-}
-
 function parseIfoodMenu(data) {
-  // Tenta múltiplas estruturas do JSON (API v1 e v2 diferem)
-  const nomeLoja = data.name || data.restaurantName || data.tradingName || 'Restaurante';
-  let sections = [];
+  // Resposta do site-api vem em { code: "00", data: { menu: [...] } }
+  // Resposta da marketplace-api vem diretamente sem wrapper
+  const inner = data?.data || data;
+  const nomeLoja = inner?.name || data?.name || 'Restaurante';
 
-  if (Array.isArray(data.menu)) sections = data.menu;
-  else if (Array.isArray(data.catalog)) sections = data.catalog;
-  else if (Array.isArray(data.sections)) sections = data.sections;
-  else if (data.data && Array.isArray(data.data.sections)) sections = data.data.sections;
+  let sections = [];
+  if (Array.isArray(inner?.menu)) sections = inner.menu;
+  else if (Array.isArray(inner?.catalog)) sections = inner.catalog;
+  else if (Array.isArray(data?.menu)) sections = data.menu;
+  else if (Array.isArray(data?.sections)) sections = data.sections;
 
   let textoCompleto = `${nomeLoja}\n\n`;
   const produtos = [];
 
   for (const sec of sections) {
-    const catName = sec.name || sec.title || sec.code || '';
+    const catName = sec.name || sec.title || '';
     const items = sec.itens || sec.items || sec.products || sec.cards || [];
     if (catName) textoCompleto += `\n## ${catName}\n`;
 
     for (const item of items) {
       const nome = (item.description || item.name || item.title || '').trim();
       const desc = (item.details || item.additionalInfo || item.subtitle || '').trim();
-      const precoNum = parseIfoodCents(item.unitPrice || item.price || item.value || item.unitMinPrice);
+      // iFood site-api retorna preços em REAIS (unitPrice: 52 = R$52,00)
+      const precoNum = Number(item.unitPrice || item.unitMinPrice || item.price || item.value || 0);
       const preco = precoNum > 0 ? `R$ ${precoNum.toFixed(2).replace('.', ',')}` : '';
       const temFoto = !!(item.logoUrl || item.imageUrl || item.image);
 
@@ -124,22 +119,45 @@ async function captureIfood(url) {
     'browser': 'Chrome',
   };
 
-  // Tenta endpoints conhecidos da API do iFood
+  // Endpoint principal: site-api (é o que o próprio frontend iFood usa)
+  const siteApiUrl = `https://www.ifood.com.br/site-api/v1/merchants/restaurant/${uuid}/catalog`;
+  const siteApiHeaders = {
+    'Accept': 'application/json, text/plain, */*',
+    'app_version': '9.153.0',
+    'browser': 'Chrome',
+    'platform': 'Desktop',
+    'access_key': '69f181d5-0046-4221-b7b2-deef62bd60d5',
+    'Referer': url,
+    'Origin': 'https://www.ifood.com.br',
+  };
+
+  try {
+    console.log(`📡 iFood site-api: ${siteApiUrl}`);
+    const data = await httpGetJson(siteApiUrl, siteApiHeaders, 12000);
+    const { nomeLoja, textoCompleto, produtos } = parseIfoodMenu(data);
+    if (produtos.length > 0) {
+      console.log(`✅ iFood site-api: ${produtos.length} produtos de "${nomeLoja}"`);
+      return buildResult('ifood', textoCompleto, produtos);
+    }
+  } catch (e) {
+    console.warn(`iFood site-api: ${e.message}`);
+  }
+
+  // Fallback: marketplace API
   for (const endpoint of [
     `https://marketplace.ifood.com.br/v2/merchants/${uuid}?required_info=MENU`,
     `https://marketplace.ifood.com.br/v1/merchants/${uuid}/catalog`,
-    `https://marketplace.ifood.com.br/v2/merchants/${uuid}/catalog`,
   ]) {
     try {
-      console.log(`📡 iFood API: ${endpoint}`);
+      console.log(`📡 iFood marketplace API: ${endpoint}`);
       const data = await httpGetJson(endpoint, ifooodHeaders, 12000);
       const { nomeLoja, textoCompleto, produtos } = parseIfoodMenu(data);
       if (produtos.length > 0) {
-        console.log(`✅ iFood API: ${produtos.length} produtos de "${nomeLoja}"`);
+        console.log(`✅ iFood marketplace: ${produtos.length} produtos de "${nomeLoja}"`);
         return buildResult('ifood', textoCompleto, produtos);
       }
     } catch (e) {
-      console.warn(`iFood API ${e.message}`);
+      console.warn(`iFood marketplace: ${e.message}`);
     }
   }
 
