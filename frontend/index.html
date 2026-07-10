@@ -612,7 +612,7 @@
     const url = document.getElementById('input-url').value.trim();
     if (!url || !url.startsWith('http')) { alert('Cole uma URL válida'); return; }
     urlCardapio = url;
-    mostrarTela('tela-captura');
+    iniciarAnalise();
   }
 
   function maskPhone(value, country) {
@@ -638,36 +638,6 @@
   }
 
   async function iniciarAnalise() {
-    const nome       = document.getElementById('input-nome').value.trim();
-    const email      = document.getElementById('input-email').value.trim();
-    const country    = document.getElementById('input-country').value;
-    const telefone   = document.getElementById('input-telefone').value.trim();
-    const empresa    = document.getElementById('input-empresa').value.trim();
-    const segmento   = document.getElementById('input-segmento').value;
-    const faturamento = document.getElementById('input-faturamento').value;
-
-    let ok = true;
-    showErr('nome',       nome.length < 2    ? 'Digite seu nome' : null);
-    showErr('email',      !email.includes('@') ? 'E-mail inválido' : null);
-    const digits = telefone.replace(/\D/g, '');
-    const phoneOk = country === '+55' ? digits.length === 11 : digits.length >= 8;
-    showErr('telefone',   !phoneOk            ? 'Telefone incompleto' : null);
-    showErr('empresa',    empresa.length < 2  ? 'Digite o nome do restaurante' : null);
-    showErr('segmento',   !segmento           ? 'Selecione o segmento' : null);
-    showErr('faturamento',!faturamento        ? 'Selecione o faturamento' : null);
-    if (nome.length < 2 || !email.includes('@') || !phoneOk || empresa.length < 2 || !segmento || !faturamento) return;
-
-    // Guarda dados do lead para usar no CTA
-    dadosLead = { nome, email, telefone: `${country} ${telefone}`, empresa, segmento, faturamento };
-
-    // Envia lead ao CRM (fire and forget)
-    fetch('/api/lead', {
-      method: 'POST',
-      keepalive: true,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...dadosLead, urlCardapio }),
-    }).catch(() => {});
-
     mostrarTela('tela-loading');
     iniciarProgress();
     const controller = new AbortController();
@@ -676,19 +646,23 @@
       const res = await fetch(`${API_URL}/api/analisar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: urlCardapio, nome, whatsapp: `${country} ${telefone}` }),
+        body: JSON.stringify({ url: urlCardapio }),
         signal: controller.signal,
       });
       clearTimeout(fetchTimeout);
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      // Escapa todo texto da análise antes de injetar no relatório (defesa contra XSS)
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        throw new Error('O servidor encerrou a conexão sem resposta. Tente novamente.');
+      }
+      if (!res.ok || !data.success) throw new Error(data?.error || 'Erro desconhecido na análise.');
       mostrarRelatorio(deepEscape(data.analise), data.screenshotFull || '');
     } catch (err) {
       clearTimeout(fetchTimeout);
       const msg = err.name === 'AbortError'
-        ? 'A análise demorou demais. O servidor pode estar iniciando, aguarde 30 segundos e tente novamente.'
-        : 'Erro ao analisar: ' + err.message;
+        ? 'A análise demorou demais. O servidor pode estar iniciando — aguarde 30 segundos e tente novamente.'
+        : err.message;
       alert(msg);
       mostrarTela('tela-landing');
     }
@@ -1157,12 +1131,13 @@
 
   function novaAnalise() {
     urlCardapio = '';
-    ['input-url','input-nome','input-whats'].forEach(id => document.getElementById(id).value = '');
+    const el = document.getElementById('input-url');
+    if (el) el.value = '';
     mostrarTela('tela-landing');
   }
 
   function mostrarTela(id) {
-    ['tela-landing','tela-captura','tela-loading','tela-relatorio'].forEach(t => document.getElementById(t).classList.add('hidden'));
+    ['tela-landing','tela-loading','tela-relatorio'].forEach(t => document.getElementById(t).classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     window.scrollTo(0, 0);
   }
