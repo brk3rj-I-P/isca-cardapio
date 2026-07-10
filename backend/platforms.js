@@ -342,12 +342,130 @@ async function captureAiqfome(url) {
   return null;
 }
 
+// ─── Goomer ──────────────────────────────────────────────────────────────────
+
+function extractGoomerSlug(url) {
+  // Formatos: kansas.goomer.app  ou  goomer.app/cardapio/kansas  ou  app.goomer.app/kansas
+  const subdomain = url.match(/^https?:\/\/([a-z0-9-]+)\.goomer\.app/i);
+  if (subdomain && subdomain[1] !== 'www' && subdomain[1] !== 'app' && subdomain[1] !== 'api') return subdomain[1];
+  const path = url.match(/goomer\.app\/[^/]*\/([a-z0-9-]+)/i);
+  if (path) return path[1];
+  return null;
+}
+
+async function captureGoomer(url) {
+  const slug = extractGoomerSlug(url);
+  if (!slug) return null;
+
+  try {
+    // Passo 1: obter informações do restaurante e URL do cardápio
+    console.log(`📡 Goomer: info do slug "${slug}"...`);
+    const info = await httpGetJson(
+      `https://api-go.goomer.app/v2/establishments/${slug}/info?mode=slug&provider=ggo&lang=pt-BR`,
+      { 'Origin': `https://${slug}.goomer.app`, 'Referer': `https://${slug}.goomer.app/` },
+      10000
+    );
+
+    const menuUrl = info?.info?.menu;
+    if (!menuUrl) throw new Error('menu URL não encontrada na resposta info');
+    console.log(`📡 Goomer: carregando cardápio de ${menuUrl}...`);
+
+    // Passo 2: obter os produtos do cardápio
+    const menuData = await httpGetJson(
+      menuUrl + '?provider=ggo',
+      { 'Origin': `https://${slug}.goomer.app`, 'Referer': `https://${slug}.goomer.app/` },
+      12000
+    );
+
+    const nomeLoja = info.info?.name || info.settings?.name || 'Restaurante';
+    const products = menuData.products || menuData.groups?.flatMap(g => g.products || []) || [];
+
+    let textoCompleto = `${nomeLoja}\n\n`;
+    const produtos = [];
+    let currentCategory = '';
+
+    for (const item of products) {
+      const catName = item.group_name || '';
+      if (catName && catName !== currentCategory) {
+        textoCompleto += `\n## ${catName}\n`;
+        currentCategory = catName;
+      }
+      const nome = (item.name || '').trim();
+      const desc = (item.description || '').trim();
+      // Goomer retorna preços em REAIS (price: 49 = R$ 49,00)
+      const primeiroPreco = (item.prices || [])[0];
+      const precoNum = Number(item.price_tag || primeiroPreco?.price || 0);
+      const preco = precoNum > 0 ? `R$ ${precoNum.toFixed(2).replace('.', ',')}` : '';
+      const temFoto = !!(item.images?.medium || item.images?.small);
+      if (!nome || !preco) continue;
+      textoCompleto += `${nome}\n${desc ? desc + '\n' : ''}${preco}\n\n`;
+      produtos.push({ nome: nome.slice(0, 90), preco, precoNum, descricao: desc.slice(0, 220), temFoto });
+    }
+
+    if (produtos.length > 0) {
+      console.log(`✅ Goomer: ${produtos.length} produtos de "${nomeLoja}"`);
+      return buildResult('goomer', textoCompleto, produtos);
+    }
+  } catch (e) {
+    console.warn(`Goomer: ${e.message}`);
+  }
+  return null;
+}
+
+// ─── Abrahão ─────────────────────────────────────────────────────────────────
+
+async function captureAbrahao(url) {
+  // Abrahão usa o mesmo backend do Goomer (is_abrahao: true nos settings)
+  // URLs como restaurante.abrahao.app ou abrahao.app/restaurante
+  const subdomain = url.match(/^https?:\/\/([a-z0-9-]+)\.abrahao\.app/i);
+  const slug = subdomain ? subdomain[1] : url.match(/abrahao\.app\/([a-z0-9-]+)/i)?.[1];
+  if (!slug) return null;
+
+  try {
+    const info = await httpGetJson(
+      `https://api-go.goomer.app/v2/establishments/${slug}/info?mode=slug&provider=abrahao&lang=pt-BR`,
+      { 'Origin': `https://${slug}.abrahao.app`, 'Referer': `https://${slug}.abrahao.app/` },
+      10000
+    );
+    const menuUrl = info?.info?.menu;
+    if (!menuUrl) return null;
+
+    const menuData = await httpGetJson(
+      menuUrl + '?provider=abrahao',
+      { 'Origin': `https://${slug}.abrahao.app`, 'Referer': `https://${slug}.abrahao.app/` },
+      12000
+    );
+    const nomeLoja = info.info?.name || 'Restaurante';
+    const products = menuData.products || [];
+    let textoCompleto = `${nomeLoja}\n\n`;
+    const produtos = [];
+    let currentCategory = '';
+
+    for (const item of products) {
+      const catName = item.group_name || '';
+      if (catName && catName !== currentCategory) { textoCompleto += `\n## ${catName}\n`; currentCategory = catName; }
+      const nome = (item.name || '').trim();
+      const desc = (item.description || '').trim();
+      const precoNum = Number(item.price_tag || (item.prices || [])[0]?.price || 0);
+      const preco = precoNum > 0 ? `R$ ${precoNum.toFixed(2).replace('.', ',')}` : '';
+      if (!nome || !preco) continue;
+      textoCompleto += `${nome}\n${desc ? desc + '\n' : ''}${preco}\n\n`;
+      produtos.push({ nome: nome.slice(0, 90), preco, precoNum, descricao: desc.slice(0, 220), temFoto: !!(item.images?.medium) });
+    }
+
+    if (produtos.length > 0) { console.log(`✅ Abrahão: ${produtos.length} produtos`); return buildResult('abrahao', textoCompleto, produtos); }
+  } catch (e) { console.warn(`Abrahão: ${e.message}`); }
+  return null;
+}
+
 // ─── Detecção e roteamento ────────────────────────────────────────────────────
 
 const PLATFORMS = [
-  { pattern: /ifood\.com\.br/i,  name: 'ifood',   handler: captureIfood  },
-  { pattern: /rappi\.com/i,       name: 'rappi',   handler: captureRappi  },
-  { pattern: /aiqfome\.com/i,     name: 'aiqfome', handler: captureAiqfome },
+  { pattern: /ifood\.com\.br/i,   name: 'ifood',   handler: captureIfood   },
+  { pattern: /rappi\.com/i,        name: 'rappi',   handler: captureRappi   },
+  { pattern: /aiqfome\.com/i,      name: 'aiqfome', handler: captureAiqfome },
+  { pattern: /goomer\.app/i,       name: 'goomer',  handler: captureGoomer  },
+  { pattern: /abrahao\.app/i,      name: 'abrahao', handler: captureAbrahao },
 ];
 
 async function captureWithPlatformHandler(url) {
