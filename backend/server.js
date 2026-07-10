@@ -164,6 +164,8 @@ app.post('/api/analisar', async (req, res) => {
         if (tentativa === 2 || isTimeout) {
           const msg = e.message.includes('ERR_NAME_NOT_RESOLVED')
             ? 'Não conseguimos acessar esse link. Verifique se o endereço está correto.'
+            : e.message.includes('rappi_timeout')
+            ? 'O Rappi bloqueou o acesso automático. Tente novamente em alguns minutos.'
             : isTimeout
             ? 'O cardápio demorou demais para carregar. Tente novamente.'
             : 'Erro ao acessar o cardápio. Verifique se o link está correto e tente novamente.';

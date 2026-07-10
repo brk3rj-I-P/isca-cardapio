@@ -153,8 +153,8 @@ async function captureRappiWithIntercept(url, opts = {}) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   } catch (_) {}
 
-  // Aguarda até 20s pela captura da resposta da API
-  const deadline = Date.now() + 20000;
+  // Aguarda até 35s pela captura da resposta da API (Render é mais lento que browser local)
+  const deadline = Date.now() + 35000;
   while (!capturedData && Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 500));
   }
@@ -179,11 +179,12 @@ async function capturarCardapio(url, opts = {}) {
   if (platformResult) return platformResult;
 
   // Rappi: usa Puppeteer com interceptação de resposta da API (a chave guest é gerada dinamicamente no browser)
+  // Se o intercept falhar não tenta DOM scraping — a detecção de bot tornaria isso ineficaz (timeout duplo)
   if (/rappi\.com/i.test(url)) {
     console.log('🎯 Rappi: usando interceptação de browser');
     const rappiResult = await captureRappiWithIntercept(url, opts);
     if (rappiResult) return rappiResult;
-    console.warn('⚠️ Rappi intercept falhou, tentando scraping DOM');
+    throw new Error('rappi_timeout: não foi possível capturar o cardápio do Rappi.');
   }
 
 
