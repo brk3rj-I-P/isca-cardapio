@@ -154,7 +154,7 @@ app.post('/api/analisar', async (req, res) => {
         console.log(`📸 Screenshot (tentativa ${tentativa})...`);
         resultado = await Promise.race([
           capturarCardapio(url, { pinHost: seg.host, pinIp: seg.ip }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('screenshot_timeout')), 100000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('screenshot_timeout')), 120000)),
         ]);
         console.log('✅ Screenshots capturados');
         break;

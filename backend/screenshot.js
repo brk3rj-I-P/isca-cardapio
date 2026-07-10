@@ -59,16 +59,19 @@ async function fecharModais(page) {
       });
     });
 
-    // Remove elementos com position:fixed que cobrem a tela
-    document.querySelectorAll('*').forEach(el => {
-      const s = window.getComputedStyle(el);
-      if (s.position === 'fixed' || s.position === 'sticky') {
-        const rect = el.getBoundingClientRect();
-        // Só remove se cobrir mais de 40% da largura e 30% da altura da tela
-        if (rect.width > window.innerWidth * 0.4 && rect.height > window.innerHeight * 0.3) {
-          el.remove();
+    // Remove elementos com position:fixed que cobrem a tela (limitado a 800 elementos por performance)
+    const allEls = [...document.querySelectorAll('*')];
+    const sample = allEls.length > 800 ? allEls.slice(0, 800) : allEls;
+    sample.forEach(el => {
+      try {
+        const s = window.getComputedStyle(el);
+        if (s.position === 'fixed' || s.position === 'sticky') {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > window.innerWidth * 0.4 && rect.height > window.innerHeight * 0.3) {
+            el.remove();
+          }
         }
-      }
+      } catch(_) {}
     });
 
     // Restaura scroll
