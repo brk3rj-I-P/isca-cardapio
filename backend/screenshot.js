@@ -1,6 +1,7 @@
 const puppeteerExtra = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteerExtra.use(StealthPlugin());
+const { captureWithPlatformHandler } = require('./platforms');
 
 async function fecharModais(page) {
   // 1. Tenta pressionar Escape
@@ -98,6 +99,11 @@ function ehHostInternoLiteral(host) {
 }
 
 async function capturarCardapio(url, opts = {}) {
+  // Tenta handler específico por plataforma antes de abrir Puppeteer
+  const platformResult = await captureWithPlatformHandler(url);
+  if (platformResult) return platformResult;
+
+
   const { pinHost, pinIp } = opts;
   const launchOptions = {
     headless: true,

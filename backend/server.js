@@ -160,12 +160,11 @@ app.post('/api/analisar', async (req, res) => {
         break;
       } catch (e) {
         console.error(`❌ Screenshot tentativa ${tentativa}: ${e.message}`);
-        if (tentativa === 2) {
-          const msg = e.message === 'screenshot_timeout'
-            ? 'O cardápio demorou demais para carregar. Tente novamente.'
-            : e.message.includes('ERR_NAME_NOT_RESOLVED')
+        const isTimeout = e.message === 'screenshot_timeout' || e.message.includes('timeout') || e.message.includes('Timeout');
+        if (tentativa === 2 || isTimeout) {
+          const msg = e.message.includes('ERR_NAME_NOT_RESOLVED')
             ? 'Não conseguimos acessar esse link. Verifique se o endereço está correto.'
-            : (e.message.includes('timeout') || e.message.includes('Timeout'))
+            : isTimeout
             ? 'O cardápio demorou demais para carregar. Tente novamente.'
             : 'Erro ao acessar o cardápio. Verifique se o link está correto e tente novamente.';
           return res.status(502).json({ error: msg });
